@@ -4,6 +4,8 @@
 #include "src/libcanard/canard.h"
 #include "src/libcanard/canard_dsdl.h"
 
+#include "src/hc_sr04/hc_sr04.h"
+
 #define NODE_ID 1
 
 // libcanard
@@ -33,88 +35,6 @@ static void canardFree(CanardInstance *const ins, void *const pointer)
 {
     (void)ins;
     free(pointer);
-}
-
-void setup()
-{
-
-    setupOneHertzTimer();
-
-    // Initialize the node with a static node-ID as specified in the command-line arguments.
-    canard_instance = canardInit(&canardAllocate, &canardFree);
-    canard_instance.mtu_bytes = CANARD_MTU_CAN_CLASSIC; // Do not use CAN FD to enhance compatibility.
-    canard_instance.node_id = (CanardNodeID)NODE_ID;
-
-    //Subsciptions
-
-    // Subscribe to messages uavcan.node.Heartbeat.
-    CanardRxSubscription heartbeat_subscription;
-    (void)canardRxSubscribe(&canard_instance, //
-                            CanardTransferKindMessage,
-                            HeartbeatSubjectID,
-                            7,
-                            CANARD_DEFAULT_TRANSFER_ID_TIMEOUT_USEC,
-                            &heartbeat_subscription);
-
-    // Subcribe to dummy message
-    CanardRxSubscription dummy_subscription;
-    (void)canardRxSubscribe(&canard_instance,
-                            CanardTransferKindMessage,
-                            DummySubjectID,
-                            0,
-                            CANARD_DEFAULT_TRANSFER_ID_TIMEOUT_USEC,
-                            &dummy_subscription);
-
-    Serial.begin(115200);
-
-    // Initialize the CAN bus module
-    while (CAN_OK != CAN.begin(CAN_500KBPS))
-    {
-        Serial.println("CAN BUS Shield init fail");
-        Serial.println(" Init CAN BUS Shield again");
-        delay(100);
-    }
-    Serial.println("CAN BUS Shield init ok!");
-    Serial.flush();
-}
-
-// the loop function runs over and over again forever
-void loop()
-{
-    if (do_publish_heartbeat)
-    {
-        publishHeartbeat(0);
-        do_publish_heartbeat = false;
-    }
-
-    // Transmit pending frames.
-    const CanardFrame *txf = canardTxPeek(&canard_instance);
-    while (txf != NULL)
-    {
-        canTransmit(txf);
-        canardTxPop(&canard_instance);
-        free((void *)txf);
-        txf = canardTxPeek(&canard_instance);
-    }
-
-    // Process received frames, if any.
-    CanardFrame rxf;
-    if (canRecieve(&rxf))
-    {
-
-        Serial.println("*****************");
-        CanardTransfer transfer;
-        if (canardRxAccept(&canard_instance, &rxf, 0, &transfer))
-        {
-            if ((transfer.transfer_kind == CanardTransferKindMessage) &&
-                (transfer.port_id == HeartbeatSubjectID))
-            {
-                Serial.print("Hearbeat Recieved\n");
-            }
-            free((void *)transfer.payload);
-        }
-        Serial.println("*****************");
-    }
 }
 
 ISR(TIMER4_COMPA_vect)
@@ -222,4 +142,90 @@ int canRecieve(CanardFrame *out_frame)
     }
 
     return -1;
+}
+
+void setup()
+{
+
+    setupOneHertzTimer();
+
+    setup_hc_sr04();
+
+    // Initialize the node with a static node-ID as specified in the command-line arguments.
+    canard_instance = canardInit(&canardAllocate, &canardFree);
+    canard_instance.mtu_bytes = CANARD_MTU_CAN_CLASSIC; // Do not use CAN FD to enhance compatibility.
+    canard_instance.node_id = (CanardNodeID)NODE_ID;
+
+    //Subsciptions
+
+    // Subscribe to messages uavcan.node.Heartbeat.
+    CanardRxSubscription heartbeat_subscription;
+    (void)canardRxSubscribe(&canard_instance, //
+                            CanardTransferKindMessage,
+                            HeartbeatSubjectID,
+                            7,
+                            CANARD_DEFAULT_TRANSFER_ID_TIMEOUT_USEC,
+                            &heartbeat_subscription);
+
+    // Subcribe to dummy message
+    CanardRxSubscription dummy_subscription;
+    (void)canardRxSubscribe(&canard_instance,
+                            CanardTransferKindMessage,
+                            DummySubjectID,
+                            0,
+                            CANARD_DEFAULT_TRANSFER_ID_TIMEOUT_USEC,
+                            &dummy_subscription);
+
+    Serial.begin(115200);
+
+    // Initialize the CAN bus module
+    while (CAN_OK != CAN.begin(CAN_500KBPS))
+    {
+        Serial.println("CAN BUS Shield init fail");
+        Serial.println(" Init CAN BUS Shield again");
+        delay(100);
+    }
+    Serial.println("CAN BUS Shield init ok!");
+    Serial.flush();
+}
+
+// the loop function runs over and over again forever
+void loop()
+{
+    if (do_publish_heartbeat)
+    {
+        publishHeartbeat(0);
+        do_publish_heartbeat = false;
+    }
+
+    // Transmit pending frames.
+    const CanardFrame *txf = canardTxPeek(&canard_instance);
+    while (txf != NULL)
+    {
+        canTransmit(txf);
+        canardTxPop(&canard_instance);
+        free((void *)txf);
+        txf = canardTxPeek(&canard_instance);
+    }
+
+    // Process received frames, if any.
+    CanardFrame rxf;
+    if (canRecieve(&rxf))
+    {
+
+        Serial.println("*****************");
+        CanardTransfer transfer;
+        if (canardRxAccept(&canard_instance, &rxf, 0, &transfer))
+        {
+            if ((transfer.transfer_kind == CanardTransferKindMessage) &&
+                (transfer.port_id == HeartbeatSubjectID))
+            {
+                Serial.print("Hearbeat Recieved\n");
+            }
+            free((void *)transfer.payload);
+        }
+        Serial.println("*****************");
+    }
+
+    float distance = loop_hc_sr04(canard_instance);
 }
